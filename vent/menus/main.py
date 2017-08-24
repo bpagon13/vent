@@ -23,6 +23,7 @@ from vent.menus.add import AddForm
 from vent.menus.ntap import CreateNTap
 from vent.menus.ntap import DeleteNTap
 from vent.menus.ntap import ListNTap
+from vent.menus.ntap import NICsNTap
 from vent.menus.ntap import StartNTap
 from vent.menus.ntap import StopNTap
 from vent.menus.backup import BackupForm
@@ -314,6 +315,9 @@ class MainForm(npyscreen.FormBaseNewWithMenus):
         form_args['name'] += "\t"*8 + "^T to toggle main"
         if s_action in self.view_togglable:
             form_args['name'] += "\t"*8 + "^V to toggle group view"
+        if s_action == 'configure':
+            form_args['name'] += "\t"*8 + "^B to toggle configuring" \
+                    " instances or specific tool"
         try:
             self.remove_forms(forms)
             thr = Thread(target=self.add_form, args=(),
@@ -345,8 +349,8 @@ class MainForm(npyscreen.FormBaseNewWithMenus):
             self.parentApp.change_form('TUTORIALADDINGPLUGINS')
         elif action == "adding_files":
             self.parentApp.change_form('TUTORIALADDINGFILES')
-        elif action == "setting_up_services":
-            self.parentApp.change_form('TUTORIALSETTINGUPSERVICES')
+        elif action == "basic_troubleshooting":
+            self.parentApp.change_form('TUTORIALTROUBLESHOOTING')
         return
 
     def system_commands(self, action):
@@ -441,6 +445,11 @@ class MainForm(npyscreen.FormBaseNewWithMenus):
                          'name': 'Network Tap Interface List' + "\t"*6 +
                                   '^T to toggle main' + "\t"*6}
             self.add_form(ListNTap, "Network Tap List", form_args)
+        elif action == "ntapnics":
+            form_args = {'color': 'CONTROL',
+                         'name': 'Available Network Interfaces' + "\t"*6 +
+                                  '^T to toggle main' + "\t"*6}
+            self.add_form(NICsNTap, "Available Network Interfaces", form_args)
         return
 
     def create(self):
@@ -626,23 +635,25 @@ class MainForm(npyscreen.FormBaseNewWithMenus):
                         arguments=['swarm'], shortcut='s')
         self.m6.addItem(text='Factory reset', onSelect=self.system_commands,
                         arguments=['reset'], shortcut='r')
+        self.s6 = self.m6.addNewSubmenu(name='Network Tap Interface',
+                                        shortcut='n')
         self.m6.addItem(text='Restore', onSelect=self.system_commands,
                         arguments=['restore'], shortcut='t')
         self.m6.addItem(text='Upgrade (To Be Implemented...)',
                         onSelect=self.system_commands,
                         arguments=['upgrade'], shortcut='u')
-        self.s6 = self.m6.addNewSubmenu(name='Network Tap Interface',
-                                        shortcut='n')
         self.s6.addItem(text='Create', onSelect=self.system_commands,
                         shortcut='c', arguments=['ntapcreate'])
         self.s6.addItem(text='Delete', onSelect=self.system_commands,
                         shortcut='d', arguments=['ntapdelete'])
+        self.s6.addItem(text='List', onSelect=self.system_commands,
+                        shortcut='l', arguments=['ntaplist'])
+        self.s6.addItem(text='NICs', onSelect=self.system_commands,
+                        shortcut='n', arguments=['ntapnics'])
         self.s6.addItem(text='Start', onSelect=self.system_commands,
                         shortcut='s', arguments=['ntapstart'])
         self.s6.addItem(text='Stop', onSelect=self.system_commands,
                         shortcut='t', arguments=['ntapstop'])
-        self.s6.addItem(text='List', onSelect=self.system_commands,
-                        shortcut='l', arguments=['ntaplist'])
 
         # Tutorial Menu Items
         self.m7 = self.add_menu(name="Tutorials", shortcut="t")
@@ -666,10 +677,10 @@ class MainForm(npyscreen.FormBaseNewWithMenus):
         self.s4 = self.m7.addNewSubmenu(name="Files", shortcut='f')
         self.s4.addItem(text="Adding Files", onSelect=self.switch_tutorial,
                         arguments=['adding_files'], shortcut='a')
-        self.s5 = self.m7.addNewSubmenu(name="Services", shortcut='s')
-        self.s5.addItem(text="Setting up Services",
+        self.s5 = self.m7.addNewSubmenu(name="Help", shortcut='s')
+        self.s5.addItem(text="Basic Troubleshooting",
                         onSelect=self.switch_tutorial,
-                        arguments=['setting_up_services'], shortcut='s')
+                        arguments=['basic_troubleshooting'], shortcut='t')
 
     def help_form(self, *args, **keywords):
         """ Toggles to help """

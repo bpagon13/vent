@@ -12,6 +12,7 @@ from vent.helpers.logs import Logger
 from vent.helpers.meta import Containers
 from vent.helpers.meta import Images
 from vent.menus.editor import EditorForm
+from vent.menus.instances import InstanceForm
 
 
 class ToolForm(npyscreen.ActionForm):
@@ -47,6 +48,7 @@ class ToolForm(npyscreen.ActionForm):
                 # don't do core because that's the purpose of all in views
                 if group != '' and group != 'core':
                     possible_groups.add(group)
+        self.manifest = manifest
         self.views += possible_groups
         self.views.append('all groups')
         super(ToolForm, self).__init__(*args, **keywords)
@@ -56,13 +58,14 @@ class ToolForm(npyscreen.ActionForm):
         self.parentApp.switchForm('MAIN')
 
     def toggle_view(self, *args, **kwargs):
-        manifest = Template(self.api_action.plugin.manifest)
+        """ Toggles the view between different groups """
         group_to_display = self.views.popleft()
         self.cur_view.value = group_to_display
         for repo in self.tools_tc:
             for tool in self.tools_tc[repo]:
-                if group_to_display not in manifest.option(tool, 'groups')[1] \
-                        and group_to_display != 'all groups':
+                t_groups = manifest.option(tool, 'groups')[1]
+                if group_to_display not in t_groups and \
+                        group_to_display != 'all groups':
                     self.tools_tc[repo][tool].value = False
                     self.tools_tc[repo][tool].hidden = True
                 else:
@@ -72,6 +75,25 @@ class ToolForm(npyscreen.ActionForm):
         self.display()
         # add view back to queue
         self.views.append(group_to_display)
+
+    def change_configure(self, *args, **kwargs):
+        """ Change whether configuring template or instances """
+        # reverse whatever previous configuration decision was
+        if self.conf_instances:
+            self.configure_view.value = 'specific tool'
+        else:
+            self.configure_view.value = 'instances'
+        self.conf_instances = not self.conf_instances
+        for repo in self.tools_tc:
+            for tool in self.tools_tc[repo]:
+                if self.manifest.option(tool, 'name')[1][-1] in '0123456789':
+                    if self.conf_instances:
+                        self.tools_tc[repo][tool].value = False
+                        self.tools_tc[repo][tool].hidden = True
+                    else:
+                        self.tools_tc[repo][tool].value = True
+                        self.tools_tc[repo][tool].hidden = False
+        self.display()
 
     def create(self, group_view=False):
         """ Update with current tools """
@@ -89,6 +111,15 @@ class ToolForm(npyscreen.ActionForm):
             i = 5
         else:
             i = 4
+
+        if self.action['action_name'] == 'configure':
+            self.configure_view = self.add(npyscreen.TitleText,
+                                           name='Configuring:',
+                                           value='specific tool',
+                                           editable=False, rely=3)
+            self.conf_instances = False
+            self.add_handlers({"^B": self.change_configure})
+            i = 5
 
         if self.action['action_name'] == 'start':
             response = self.action['api_action'].inventory(choices=['repos',
@@ -159,10 +190,20 @@ class ToolForm(npyscreen.ActionForm):
                             disabled = True
                         if (not externally_active and not disabled and not
                                 show_disabled):
-                            ncore_list.append(tool)
+                            instance_num = manifest.option(tool, 'name')[1][-1]
+                            if instance_num not in '0123456789':
+                                ncore_list.append(tool)
+                            # multiple instances share same image
+                            elif self.action['action_name'] != 'build':
+                                ncore_list.append(tool)
                         elif (not externally_active and disabled and
                                 show_disabled):
-                            ncore_list.append(tool)
+                            instance_num = manifest.option(tool, 'name')[1][-1]
+                            if instance_num not in '0123456789':
+                                ncore_list.append(tool)
+                            # multiple instances share same image
+                            elif self.action['action_name'] != 'build':
+                                ncore_list.append(tool)
 
                 for tool in inventory['core']:
                     tool_repo_name = tool.split(":")
@@ -195,10 +236,20 @@ class ToolForm(npyscreen.ActionForm):
                             disabled = True
                         if (not externally_active and not disabled and not
                                 show_disabled):
-                            core_list.append(tool)
+                            instance_num = manifest.option(tool, 'name')[1][-1]
+                            if instance_num not in '0123456789':
+                                core_list.append(tool)
+                            # multiple instances share same image
+                            elif self.action['action_name'] != 'build':
+                                core_list.append(tool)
                         elif (not externally_active and disabled and
                                 show_disabled):
-                            core_list.append(tool)
+                            instance_num = manifest.option(tool, 'name')[1][-1]
+                            if instance_num not in '0123456789':
+                                core_list.append(tool)
+                            # multiple instances share same image
+                            elif self.action['action_name'] != 'build':
+                                core_list.append(tool)
 
                 has_core[repo] = core_list
                 has_non_core[repo] = ncore_list
@@ -344,6 +395,7 @@ class ToolForm(npyscreen.ActionForm):
                                  'tool_name': t[0],
                                  'branch': t[1],
                                  'version': t[2],
+                                 'repo': repo,
                                  'next_tool': None,
                                  'get_configure': self.action['action_object1'],
                                  'save_configure': self.action['action_object2'],
@@ -352,9 +404,20 @@ class ToolForm(npyscreen.ActionForm):
                                  'registry_download': False}
                         if tools_to_configure:
                             kargs['next_tool'] = tools_to_configure[-1]
-                        self.parentApp.addForm("EDITOR" + t[0], EditorForm,
-                                               **kargs)
-                        tools_to_configure.append("EDITOR" + t[0])
+
+                        if not self.conf_instances:
+                            form_name = "EDITOR" + t[0]
+                            form = EditorForm
+                        else:
+                            form_name = "INSTANCE" + t[0]
+                            form = InstanceForm
+                            kargs.update({'clean': action.clean,
+                                          'prep_start': action.prep_start,
+                                          'start_tools': action.start,
+                                          'name': 'New number of instances' \
+                                                  ' for ' + t[0]})
+                        self.parentApp.addForm(form_name, form, **kargs)
+                        tools_to_configure.append(form_name)
                     else:
                         kargs = {'name': t[0],
                                  'branch': t[1],

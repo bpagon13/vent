@@ -11,7 +11,8 @@ def gpu_queue(options):
     status = (False, None)
 
     print("gpu queue", str(options))
-    print("gpu queue", str(GpuUsage()))
+    print("gpu queue", str(GpuUsage(base_dir="/vent/",
+                                    meta_dir="/vent")))
 
     options = json.loads(options)
     configs = options['configs']
@@ -60,7 +61,7 @@ def gpu_queue(options):
     print("dedicated: ", dedicated)
     device = None
     while not device:
-        usage = GpuUsage()
+        usage = GpuUsage(base_dir="/vent/", meta_dir="/vent")
 
         if usage[0]:
             usage = usage[1]
@@ -363,10 +364,9 @@ def file_queue(path, template_path="/vent/"):
             orig_path_d[image_name] = orig_path
             labels_d[image_name] = labels
 
-        # TODO add connections to syslog, labels, and file path etc.
         # TODO get syslog address rather than hardcode
-        # TODO get group and name for tag
-        # TODO add rw volume for plugin output to be plugin input
+        # TODO add group label
+        # TODO get group and name for syslog tag
         log_config = {'type': 'syslog',
                       'config': {'syslog-address': 'tcp://0.0.0.0:514',
                                  'syslog-facility': 'daemon',
@@ -407,6 +407,7 @@ def file_queue(path, template_path="/vent/"):
                                             'command': path_cmd[image],
                                             'labels': labels,
                                             'detach': True,
+                                            'remove': True,
                                             'log_config': log_config,
                                             'configs': configs[image]})
                         q.enqueue('watch.gpu_queue', q_str, ttl=2592000)
@@ -420,6 +421,7 @@ def file_queue(path, template_path="/vent/"):
                                             command=path_cmd[image],
                                             labels=labels,
                                             detach=True,
+                                            remove=True,
                                             log_config=log_config,
                                             **configs[image])
         if failed_images:

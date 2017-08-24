@@ -227,10 +227,13 @@ class PluginHelper:
                        version):
         """ Run through sections for prep_start """
         tool_d = {}
+        status = (True, None)
         for section in s:
             # initialize needed vars
             c_name = s[section]['image_name'].replace(':', '-')
             c_name = c_name.replace('/', '-')
+            if s[section]['name'][-1] in '0123456789':
+                c_name += s[section]['name'][-1]
             image_name = s[section]['image_name']
 
             # checkout the right version and branch of the repo
@@ -354,7 +357,7 @@ class PluginHelper:
                                              'tag': 'plugin'}
                             log_config['config'].update(syslog_config)
                             externally_configured = True
-                    except Exception as e:
+                    except Exception as e:  # pragma: no cover
                         self.logger.error("external settings for log_config"
                                           " couldn't be stored because: " +
                                           str(e))
@@ -447,7 +450,8 @@ class PluginHelper:
                        'path',
                        'image_name',
                        'branch',
-                       'version']
+                       'version',
+                       'instance_number']
             vent_config = Template(template=self.path_dirs.cfg_file)
             files = vent_config.option('main', 'files')
             files = (files[0], expanduser(files[1]))
@@ -492,7 +496,7 @@ class PluginHelper:
                                     # longer connecting to local container
                                     links_to_delete.add(link)
                                     configure_local = False
-                            except Exception as e:
+                            except Exception as e:  # pragma: no cover
                                 self.logger.error("couldn't load external"
                                                   " settings because: " +
                                                   str(e))
@@ -556,7 +560,7 @@ class PluginHelper:
                                 if ('locally_active' in tool_config and
                                         tool_config['locally_active'] == 'no'):
                                     del tool_d[c]
-                            except Exception as e:
+                            except Exception as e:  # pragma: no cover
                                 self.logger.warn("Locally running container " +
                                                  name + " may be redundant")
 
@@ -642,10 +646,6 @@ class PluginHelper:
                 failed = False
                 if (gpu in tool_d[container]['labels'] and
                    tool_d[container]['labels'][gpu] == 'yes'):
-                    # TODO check for availability of gpu(s),
-                    #      otherwise queue it up until it's
-                    #      available
-                    # !! TODO check for device settings in vent.template
                     vent_config = Template(template=self.path_dirs.cfg_file)
                     port = ''
                     host = ''

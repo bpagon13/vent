@@ -234,14 +234,24 @@ class Plugin:
         template = self._build_image(template, match_path, image_name, section)
         chdir(cwd)
 
+        # get untagged images
+        untagged = None
+        try:
+            untagged = self.d_client.images.list(filters={"label": "vent",
+                                                          "dangling": "true"})
+        except Exception as e:  # pragma: no cover
+            self.logger.error("unabled to get images to remove: " + str(e))
+
         # remove untagged images
-        untagged = self.d_client.images.list(filters={"label": "vent",
-                                                      "dangling": "true"})
         if untagged:
             deleted_images = ""
             for image in untagged:
                 deleted_images = '\n'.join([deleted_images, image.id])
-                self.d_client.images.remove(image.id, force=True)
+                try:
+                    self.d_client.images.remove(image.id, force=True)
+                except Exception as e:  # pragma: no cover
+                    self.logger.warning("unable to remove image: " + image.id +
+                                        " because: " + str(e))
             self.logger.info("removed dangling images:" + deleted_images)
 
         self.logger.info("template of builder: " + str(template))
@@ -318,6 +328,10 @@ class Plugin:
         # !! TODO check for pre-existing that conflict with request and
         #         disable and/or remove image
         for match in matches:
+            # keep track of whether or not to write an additional manifest
+            # entry for multiple instances, and how many additional entries
+            # to write
+            addtl_entries = 0
             # remove the .git for adding repo info to manifest
             if self.repo.endswith('.git'):
                 self.repo = self.repo[:-4]
@@ -414,6 +428,11 @@ class Plugin:
                                 option_name = option
                                 if option == 'name':
                                     option_name = 'link_name'
+                                elif option == 'instances':
+                                    instances = vent_template.option(header,
+                                                                     option)[1]
+                                    if int(instances) > 1:
+                                        addtl_entries = int(instances) - 1
                                 option = vent_template.option(header, option)
                                 option_val = option[1]
                                 section_dict[option_name] = option_val
@@ -470,6 +489,19 @@ class Plugin:
                                              match_path,
                                              image_name,
                                              section)
+                # write additional entries for multiple instances
+                if addtl_entries > 0:
+                    # add 2 for naming conventions
+                    for i in range(2, addtl_entries + 2):
+                        addtl_section = section.rsplit(':', 2)
+                        addtl_section[0] += str(i)
+                        addtl_section = ':'.join(addtl_section)
+                        template.add_section(addtl_section)
+                        orig_vals = template.section(section)[1]
+                        for val in orig_vals:
+                            template.set_option(addtl_section, val[0], val[1])
+                        template.set_option(addtl_section, "name",
+                                            true_name.split('/')[-1]+str(i))
 
             # write out configuration to the manifest file
             template.write_config()
@@ -488,6 +520,38 @@ class Plugin:
         Build docker images and store results in template
         """
 
+        def set_instances(template, section, built, image_id=None):
+            """ Set build information for multiple instances """
+            self.logger.info("entering set_instances")
+            i = 2
+            while True:
+                addtl_section = section.rsplit(':', 2)
+                addtl_section[0] += str(i)
+                addtl_section = ':'.join(addtl_section)
+                self.logger.info(addtl_section)
+                if template.section(addtl_section)[0]:
+                    template.set_option(addtl_section, "built", built)
+                    if image_id:
+                        template.set_option(addtl_section, "image_id",
+                                            image_id)
+                    template.set_option(addtl_section,
+                                        "last_updated",
+                                        str(datetime. \
+                                                utcnow()) +
+                                        " UTC")
+                else:
+                    break
+                i += 1
+
+        # determine whether a tool should be considered a multi instance
+        try:
+            settings_dict = json.loads(template.option(section, 'settings')[1])
+            if int(settings_dict['instances']) > 1:
+                multi_instance = True
+            else:
+                multi_instance = False
+        except:
+            multi_instance = False
         # !! TODO return status of whether it built successfully or not
         if self.build:
             cwd = getcwd()
@@ -522,6 +586,9 @@ class Plugin:
                             template.set_option(section, "last_updated",
                                                 str(datetime.utcnow()) +
                                                 " UTC")
+                            # set other instances too
+                            if multi_instance:
+                                set_instances(template, section, 'yes', image_id)
                             status = (True, "Pulled " + image_name)
                             self.logger.info(str(status))
                         else:
@@ -529,6 +596,9 @@ class Plugin:
                             template.set_option(section, "last_updated",
                                                 str(datetime.utcnow()) +
                                                 " UTC")
+                            # set other instances too
+                            if multi_instace:
+                                set_instances(template, section, 'failed')
                             status = (False, "Failed to pull image " +
                                       str(output.split('\n')[-1]))
                             self.logger.warning(str(status))
@@ -579,17 +649,25 @@ class Plugin:
                     template.set_option(section, "last_updated",
                                         str(datetime.utcnow()) +
                                         " UTC")
+                    # set other instances too
+                    if multi_instance:
+                        set_instances(template, section, 'yes', image_id)
             except Exception as e:  # pragma: no cover
                 self.logger.error("unable to build image: " + str(image_name) +
                                   " because: " + str(e))
                 template.set_option(section, "built", "failed")
                 template.set_option(section, "last_updated",
                                     str(datetime.utcnow()) + " UTC")
+                if multi_instance:
+                    set_instances(template, section, 'failed')
+
             chdir(cwd)
         else:
             template.set_option(section, "built", "no")
             template.set_option(section, "last_updated",
                                 str(datetime.utcnow()) + " UTC")
+            if multi_instance:
+                set_instances(template, section, 'no')
         template.set_option(section, 'running', 'no')
         return template
 
