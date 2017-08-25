@@ -18,6 +18,7 @@ from vent.helpers.meta import Timestamp
 
 
 class Action:
+    # testing to make sure git config right
     """ Handle actions in menu """
     def __init__(self, **kargs):
         self.plugin = Plugin(**kargs)
