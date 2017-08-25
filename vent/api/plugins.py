@@ -5,13 +5,14 @@ import shlex
 
 from datetime import datetime
 from os import chdir, getcwd
-from os.path import join
+from os.path import isdir, join
 from subprocess import check_output, STDOUT
 
 from vent.api.plugin_helpers import PluginHelper
 from vent.api.templates import Template
 from vent.helpers.errors import ErrorHandler
 from vent.helpers.logs import Logger
+from vent.helpers.meta import Timestamp
 from vent.helpers.paths import PathDirs
 
 
@@ -535,10 +536,7 @@ class Plugin:
                         template.set_option(addtl_section, "image_id",
                                             image_id)
                     template.set_option(addtl_section,
-                                        "last_updated",
-                                        str(datetime. \
-                                                utcnow()) +
-                                        " UTC")
+                                        "last_updated", Timestamp())
                 else:
                     break
                 i += 1
@@ -550,7 +548,7 @@ class Plugin:
                 multi_instance = True
             else:
                 multi_instance = False
-        except:
+        except Exception:
             multi_instance = False
         # !! TODO return status of whether it built successfully or not
         if self.build:
@@ -561,6 +559,8 @@ class Plugin:
                 # labels on images yet
                 name = template.option(section, "name")
                 groups = template.option(section, "groups")
+                repo = template.option(section, "repo")
+                t_type = template.option(section, "type")
                 if groups[1] == "" or not groups[0]:
                     groups = (True, "none")
                 if not name[0]:
@@ -588,7 +588,8 @@ class Plugin:
                                                 " UTC")
                             # set other instances too
                             if multi_instance:
-                                set_instances(template, section, 'yes', image_id)
+                                set_instances(template, section, 'yes',
+                                              image_id)
                             status = (True, "Pulled " + image_name)
                             self.logger.info(str(status))
                         else:
@@ -629,9 +630,15 @@ class Plugin:
                     image_name = image_name.rsplit(':', 1)[0]+':'+self.version
                     output = check_output(shlex.split("docker build --label"
                                                       " vent --label"
+                                                      " vent.section=" +
+                                                      section + " --label"
+                                                      " vent.repo=" +
+                                                      repo[1] + " --label"
+                                                      " vent.type=" +
+                                                      t_type[1] + " --label"
                                                       " vent.name=" +
-                                                      name[1] + " --label "
-                                                      "vent.groups=" +
+                                                      name[1] + " --label"
+                                                      " vent.groups=" +
                                                       groups[1] + " -t " +
                                                       image_name +
                                                       commit_tag + file_tag),
@@ -714,9 +721,12 @@ class Plugin:
         results, template = self.p_helper.constraint_options(args, [])
         for result in results:
             response, image_name = template.option(result, 'image_name')
+            name = template.option(result, 'name')[1]
 
             # check for container and remove
             container_name = image_name.replace(':', '-').replace('/', '-')
+            if name[-1] in '0123456789':
+                container_name += name[-1]
             try:
                 container = self.d_client.containers.get(container_name)
                 response = container.remove(v=True, force=True)
@@ -879,4 +889,83 @@ class Plugin:
         for result in results:
             status = template.set_option(result, 'enabled', 'no')
         template.write_config()
+        return status
+
+    def auto_install(self):
+        """
+        Automatically detects images and installs them in the manifest if they
+        are not there already
+        """
+        template = Template(template=self.manifest)
+        sections = template.sections()
+        images = self.d_client.images.list(filters={'label': 'vent'})
+        add_sections = []
+        status = (True, None)
+        for image in images:
+            if ('vent.section' in image.attrs['Labels'] and
+               not image.attrs['Labels']['vent.section'] in sections[1]):
+                section = image.attrs['Labels']['vent.section']
+                section_str = image.attrs['Labels']['vent.section'].split(":")
+                template.add_section(section)
+                if 'vent.name' in image.attrs['Labels']:
+                    template.set_option(section,
+                                        'name',
+                                        image.attrs['Labels']['vent.name'])
+                if 'vent.repo' in image.attrs['Labels']:
+                    template.set_option(section,
+                                        'repo',
+                                        image.attrs['Labels']['vent.repo'])
+                    git_path = join(self.path_dirs.plugins_dir,
+                                    "/".join(section_str[:2]))
+                    if not isdir(git_path):
+                        # clone it down
+                        status = self.p_helper.clone(image.attrs['Labels']['vent.repo'])
+                    template.set_option(section, 'path', join(git_path, section_str[-3][1:]))
+                    # get template settings
+                    # TODO account for template files not named vent.template
+                    v_template = Template(template=join(git_path, section_str[-3][1:], 'vent.template'))
+                    tool_sections = v_template.sections()
+                    if tool_sections[0]:
+                        for s in tool_sections[1]:
+                            section_dict = {}
+                            options = v_template.options(s)
+                            if options[0]:
+                                for option in options[1]:
+                                    option_name = option
+                                    if option == 'name':
+                                        # get link name
+                                        template.set_option(section,
+                                                            "link_name",
+                                                            v_template.option(s, option)[1])
+                                        option_name = 'link_name'
+                                    opt_val = v_template.option(s, option)[1]
+                                    section_dict[option_name] = opt_val
+                            if section_dict:
+                                template.set_option(section, s,
+                                                    json.dumps(section_dict))
+                if ('vent.type' in image.attrs['Labels'] and
+                   image.attrs['Labels']['vent.type'] == 'repository'):
+                    template.set_option(section, 'namespace', "/".join(section_str[:2]))
+                    template.set_option(section, 'enabled', 'yes')
+                    template.set_option(section, 'branch', section_str[-2])
+                    template.set_option(section, 'version', section_str[-1])
+                    template.set_option(section, 'last_updated', str(datetime.utcnow()) + " UTC")
+                    template.set_option(section, 'image_name', image.attrs['RepoTags'][0])
+                    template.set_option(section, 'type', 'repository')
+                if 'vent.groups' in image.attrs['Labels']:
+                    template.set_option(section,
+                                        'groups',
+                                        image.attrs['Labels']['vent.groups'])
+                template.set_option(section, 'built', 'yes')
+                template.set_option(section, 'image_id', image.attrs['Id'].split(":")[1][:12])
+                template.set_option(section, 'running', 'no')
+                # check if image is running as a container
+                containers = self.d_client.containers.list(filters={'label': 'vent'})
+                for container in containers:
+                    if container.attrs['Image'] == image.attrs['Id']:
+                        template.set_option(section, 'running', 'yes')
+                add_sections.append(section)
+                template.write_config()
+        if status[0]:
+            status = (True, add_sections)
         return status

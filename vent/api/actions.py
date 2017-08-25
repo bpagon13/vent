@@ -12,6 +12,7 @@ from vent.api.plugins import Plugin
 from vent.api.templates import Template
 from vent.helpers.logs import Logger
 from vent.helpers.meta import Containers
+from vent.helpers.meta import Dependencies
 from vent.helpers.meta import Images
 from vent.helpers.meta import Timestamp
 
@@ -166,7 +167,8 @@ class Action:
                             containers_remaining.remove(container)
 
             self.logger.info("group orders: " + str(group_orders))
-            self.logger.info("containers remaining: " + str(containers_remaining))
+            self.logger.info("containers remaining: " +
+                             str(containers_remaining))
             # start containers based on priorities
             p_results = self.p_helper.start_priority_containers(groups,
                                                                 group_orders,
@@ -922,8 +924,8 @@ class Action:
         # get rid of instances if user tried to configure it in template
         if 'instances = ' in config_val:
             instance_start = config_val.find('instances =')
-            to_delete = config_val[instance_start:config_val. \
-                    find('\n', instance_start)+1]
+            to_delete = config_val[instance_start:config_val.
+                                   find('\n', instance_start)+1]
             config_val = config_val.replace(to_delete, '')
         self.logger.info("Starting: save_configure")
         constraints = locals()
@@ -1010,24 +1012,29 @@ class Action:
                                 template_to_manifest(vent_template, manifest,
                                                      i_section, instances)
                             else:
-                                settings = manifest.option(i_section, 'settings')
+                                settings = manifest.option(i_section,
+                                                           'settings')
                                 if settings[0]:
                                     settings_dict = json.loads(settings[1])
                                     settings_dict['instances'] = str(instances)
                                     manifest.set_option(i_section, 'settings',
-                                                        json.dumps(settings_dict))
+                                                        json.dumps(
+                                                            settings_dict))
                                 else:
-                                    settings_dict = {'instances': str(instances)}
+                                    inst = str(instances)
+                                    settings_dict = {'instances': inst}
                                     manifest.set_option(i_section, 'settings',
-                                                        json.dumps(settings_dict))
+                                                        json.dumps(
+                                                            settings_dict))
                     else:
                         try:
-                            settings_dict = json.loads(manifest.option(tool,
-                                                                       'settings')[1])
+                            settings_str = manifest.option(tool, 'settings')[1]
+                            settings_dict = json.loads(settings_str)
                             old_instances = int(settings_dict['instances'])
-                        except:
+                        except Exception:
                             old_instances = 1
-                        template_to_manifest(vent_template, manifest, tool, old_instances)
+                        template_to_manifest(vent_template, manifest,
+                                             tool, old_instances)
                     manifest.write_config()
                 except Exception as e:  # pragma: no cover
                     self.logger.error("save_configure error: " + str(e))
@@ -1061,35 +1068,6 @@ class Action:
         vent.cfg or to vent.template. This includes tools that need to be
         restarted because they depend on other tools that were changed.
         """
-        def find_dependencies(tools):
-            """
-            Helper function to find out what tools depend on each tool in
-            tools
-            """
-            dependencies = []
-            if tools:
-                man = Template(self.plugin.manifest)
-                for section in man.sections()[1]:
-                    # don't worry about dealing with tool if it's not running
-                    running = man.option(section, 'running')
-                    if not running[0] or running[1] != 'yes':
-                        continue
-                    t_name = man.option(section, 'name')[1]
-                    t_branch = man.option(section, 'branch')[1]
-                    t_version = man.option(section, 'version')[1]
-                    t_identifier = {'name': t_name,
-                                    'branch': t_branch,
-                                    'version': t_version}
-                    options = man.options(section)[1]
-                    if 'docker' in options:
-                        d_settings = json.loads(man.option(section,
-                                                           'docker')[1])
-                        if 'links' in d_settings:
-                            for link in json.loads(d_settings['links']):
-                                if link in tools:
-                                    dependencies.append(t_identifier)
-            return dependencies
-
         self.logger.info("Starting: restart_tools")
         status = (True, None)
         if not main_cfg:
@@ -1100,13 +1078,13 @@ class Action:
                 result = self.p_helper.constraint_options(t_identifier,
                                                           ['running',
                                                               'link_name'])
-                tools, manifest = result
+                tools = result[0]
                 tool = tools.keys()[0]
                 if ('running' in tools[tool] and
                         tools[tool]['running'] == 'yes'):
                     start_tools = [t_identifier]
                     dependent_tools = [tools[tool]['link_name']]
-                    start_tools += find_dependencies(dependent_tools)
+                    start_tools += Dependencies(dependent_tools)
                     start_d = {}
                     for tool_identifier in start_tools:
                         self.clean(**tool_identifier)
@@ -1154,11 +1132,11 @@ class Action:
                             tool_changes.append(new_tool)
                 # put link names in a dictionary for finding dependencies
                 dependent_tools = []
-                for i, entry in tool_changes:
+                for i, entry in enumerate(tool_changes):
                     dependent_tools.append(entry)
                     # change names to lowercase for use in clean, prep_start
                     tool_changes[i] = {'name': entry.lower().replace('-', '_')}
-                dependencies = find_dependencies(dependent_tools)
+                dependencies = Dependencies(dependent_tools)
                 # restart tools
                 restart = tool_changes + dependencies
                 tool_d = {}

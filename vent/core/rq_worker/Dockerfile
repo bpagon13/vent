@@ -15,7 +15,10 @@ RUN pip install git+git://github.com/cyberreboot/vent.git@master
 COPY *.py /
 
 LABEL vent="" \
-      vent.name="rq-worker" \
-      vent.groups="core,files"
+      vent.name="rq_worker" \
+      vent.groups="core,files" \
+      vent.section="cyberreboot:vent:/vent/core/rq_worker:master:HEAD" \
+      vent.repo="https://github.com/cyberreboot/vent" \
+      vent.type="repository"
 
 ENTRYPOINT ["rqworker", "-c", "settings"]
