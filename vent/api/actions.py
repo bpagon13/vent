@@ -4,6 +4,7 @@ import ast
 import docker
 import json
 import os
+import re
 import shutil
 import tempfile
 import urllib2
@@ -449,8 +450,9 @@ class Action:
             for section in s:
                 container_name = s[section]['image_name'].replace(':', '-')
                 container_name = container_name.replace('/', '-')
-                if s[section]['name'][-1] in '0123456789':
-                    container_name += s[section]['name'][-1]
+                instance_num = re.search(r'\d+$', s[section]['name'])
+                if instance_num:
+                    container_name += instance_num.group()
                 try:
                     container = self.d_client.containers.get(container_name)
                     container.remove(force=True)
@@ -867,10 +869,10 @@ class Action:
             # display all those options as they would in the file
             for section in template_dict:
                 return_str += "[" + section + "]\n"
+                # ensure instances shows up in configuration
                 for option in template_dict[section]:
-                    if option != 'instances':
-                        return_str += option + " = "
-                        return_str += template_dict[section][option] + "\n"
+                    return_str += option + " = "
+                    return_str += str(template_dict[section][option]) + "\n"
                 return_str += "\n"
             # only one newline at end of file
             status = (True, return_str[:-1])
@@ -919,14 +921,6 @@ class Action:
                     elif manifest.option(tool, section)[0]:
                         manifest.del_option(tool, section)
 
-        # ensure instances is an int
-        instances = int(instances)
-        # get rid of instances if user tried to configure it in template
-        if 'instances = ' in config_val:
-            instance_start = config_val.find('instances =')
-            to_delete = config_val[instance_start:config_val.
-                                   find('\n', instance_start)+1]
-            config_val = config_val.replace(to_delete, '')
         self.logger.info("Starting: save_configure")
         constraints = locals()
         del constraints['config_val']
@@ -936,14 +930,18 @@ class Action:
         del constraints['template_to_manifest']
         status = (True, None)
         fd = None
+        # ensure instances is an int and remove instances from config_val to
+        # ensure correct info
+        instances = int(instances)
+        config_val = re.sub(r'instances\ *=\ *\d+\n', '', config_val)
         if not main_cfg:
             if not from_registry:
                 # creating new instances
                 if instances > 1:
                     fd, template_path = tempfile.mkstemp(suffix='.template')
                     # scrub name for clean section name
-                    if name[-1] in '0123456789':
-                        name = name[:-1]
+                    if re.search(r'\d+$', name):
+                        name = re.sub(r'\d+$', '', name)
                     t_identifier = {'name': name,
                                     'branch': branch,
                                     'version': version}
@@ -1036,6 +1034,7 @@ class Action:
                         template_to_manifest(vent_template, manifest,
                                              tool, old_instances)
                     manifest.write_config()
+                    status = (True, manifest)
                 except Exception as e:  # pragma: no cover
                     self.logger.error("save_configure error: " + str(e))
                     status = (False, str(e))
