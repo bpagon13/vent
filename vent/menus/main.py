@@ -427,8 +427,7 @@ class MainForm(npyscreen.FormBaseNewWithMenus):
             output = self.api_action.tool_status_output('network_tap')
 
             # create a dict with substring as keys and forms as values
-            ntap_form = {'create': CreateNTap,
-                         'delete': DeleteNTap,
+            ntap_form = {'delete': DeleteNTap,
                          'list': ListNTap,
                          'nics': NICsNTap,
                          'start': StartNTap,

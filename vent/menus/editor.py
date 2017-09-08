@@ -426,8 +426,7 @@ class EditorForm(npyscreen.ActionForm):
 
         # save configuration information for ntap
         if self.ntap_cfg:
-            parsed_val = ParsedSections(self.edit_space.value)
-            self.settings['form_args']['config_val'] = parsed_val
+            self.settings['form_args']['config_val'] = self.edit_space.value
 
         if (new_instances == old_instances or
                 self.instance_cfg or self.vent_cfg or self.ntap_cfg):

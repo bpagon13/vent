@@ -81,7 +81,7 @@ class CreateR:
         if c:
             action = Action()
             tool_d = action.prep_start(config_val=payload['config_val'])
-            return 'tool_d: ' + str(tool_d)
+            return 'tool_d: ' + str(tool_d) + ' || ' + payload['config_val']
 
             cmd = '/tmp/run.sh ' + payload['nic'] + ' ' + payload['interval']
             cmd += ' ' + payload['id'] + ' ' + payload['iters'] + ' '
