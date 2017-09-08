@@ -6,7 +6,15 @@ from vent.api.actions import Action
 
 class CreateNTap(npyscreen.ActionForm):
     """ For creating a new network tap container """
-
+    def __init__(self, *args, **kargs):
+        """ Initialize an instance of this form """
+        # either get user edited configuration value or default
+        if 'config_val' in kargs:
+            self.config_val = kargs['config_val']
+        else:
+            self.config_val = {'network_mode': 'host',
+                               'volumes_from': ['NetworkTap']}
+        super(CreateNTap, self).__init__(*args, **kargs)
     def create(self):
         self.add_handlers({"^T": self.quit, "^Q": self.quit})
         self.add(npyscreen.Textfield,
@@ -47,6 +55,7 @@ class CreateNTap(npyscreen.ActionForm):
 
         # create a dictionary with user entered data
         payload = {}
+        payload['config_val'] = self.config_val
         payload[self.nic.name] = self.nic.value
         payload[self.id.name] = self.id.value
         payload[self.interval.name] = self.interval.value

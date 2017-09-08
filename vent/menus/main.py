@@ -21,7 +21,6 @@ from vent.helpers.meta import Uptime
 from vent.helpers.logs import Logger
 from vent.helpers.paths import PathDirs
 from vent.menus.add import AddForm
-from vent.menus.ntap import CreateNTap
 from vent.menus.ntap import DeleteNTap
 from vent.menus.ntap import ListNTap
 from vent.menus.ntap import NICsNTap
@@ -426,7 +425,14 @@ class MainForm(npyscreen.FormBaseNewWithMenus):
             form_args = {'color': 'CONTROL',
                          'name': 'Network Tap Interface Create' + "\t"*6 +
                                  '^T to toggle main'}
-            self.add_form(CreateNTap, "Network Tap Create", form_args)
+            editor_args = {'name': 'Configure new ntap instance',
+                           'tool_name': 'network_tap',
+                           'branch': 'master',
+                           'version': 'HEAD',
+                           'ntap_cfg': True,
+                           'form_args': form_args,
+                           'next_tool': "Network Tap Create"}
+            self.add_form(EditorForm, 'EDITORNTAP', editor_args)
         elif action == "ntapdelete":
             form_args = {'color': 'CONTROL',
                          'name': 'Network Tap Interface Delete' + "\t"*6 +

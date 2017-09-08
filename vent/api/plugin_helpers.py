@@ -13,6 +13,7 @@ from subprocess import check_output, STDOUT
 from vent.api.templates import Template
 from vent.helpers.logs import Logger
 from vent.helpers.paths import PathDirs
+from vent.helpers.meta import ParsedSections
 from vent.helpers.meta import Version
 
 
@@ -225,7 +226,8 @@ class PluginHelper:
                        groups,
                        enabled,
                        branch,
-                       version):
+                       version,
+                       config_val):
         """ Run through sections for prep_start """
         tool_d = {}
         status = (True, None)
@@ -248,14 +250,35 @@ class PluginHelper:
                 self.logger.info(status)
                 chdir(cwd)
 
-            # set docker settings for container
-            manifest = Template(self.manifest)
-            status = manifest.option(section, 'docker')
-            self.logger.info(status)
             tool_d[c_name] = {'image': image_name,
                               'name': c_name}
-            if status[0]:
-                options_dict = json.loads(status[1])
+            # get rid of all commented sections in various runtime
+            # configurations
+            manifest = Template(self.manifest)
+            overall_dict = {}
+            if config_val is None:
+                for setting in ['info', 'docker', 'gpu', 'settings', 'service']:
+                    option = manifest.option(section, setting)
+                    if option[0]:
+                        overall_dict[setting] = {}
+                        settings_dict = json.loads(option[1])
+                        for opt in settings_dict:
+                            if not opt.startswith('#'):
+                                overall_dict[setting][opt] = \
+                                    settings_dict[opt]
+            # handle if we're given a straight configuration val on the fly
+            else:
+                comment_dict = ParsedSections(config_val)
+                for section in comment_dict:
+                    overall_dict[section] = {}
+                    for option in comment_dict[section]:
+                        if not option.startswith('#'):
+                            overall_dict[section][option] = \
+                                comment_dict[section][option]
+
+            # set docker settings for container
+            if 'docker' in overall_dict:
+                options_dict = overall_dict['docker']
                 for option in options_dict:
                     options = options_dict[option]
                     # check for commands to evaluate
@@ -272,6 +295,12 @@ class PluginHelper:
                                     self.logger.error("unable to evaluate command specified in vent.template: " + str(e))
                                 i += 2
                         options = "".join(cmds)
+                    # perform substitution on defined macros
+                    if option == 'volumes':
+                        options = options.replace('DEFAULT_API', join(
+                                                      self.path_dirs.plugins_dir,
+                                                      'cyberreboot', 'vent',
+                                                      'vent'))
                     # store options set for docker
                     try:
                         tool_d[c_name][option] = literal_eval(options)
@@ -284,11 +313,9 @@ class PluginHelper:
                 tool_d[c_name]['labels'] = {}
 
             # get the service uri info
-            status = manifest.option(section, 'service')
-            self.logger.info(status)
-            if status[0]:
+            if 'service' in overall_dict:
                 try:
-                    options_dict = json.loads(status[1])
+                    options_dict = overall_dict['service']
                     for option in options_dict:
                         tool_d[c_name]['labels'][option] = options_dict[option]
                 except Exception as e:   # pragma: no cover
@@ -296,11 +323,9 @@ class PluginHelper:
                                       "docker: " + str(e))
 
             # check for gpu settings
-            status = manifest.option(section, 'gpu')
-            self.logger.info(status)
-            if status[0]:
+            if 'gpu' in overall_dict:
                 try:
-                    options_dict = json.loads(status[1])
+                    options_dict = overall_dict['gpu']
                     for option in options_dict:
                         tool_d[c_name]['labels']['gpu.'+option] = options_dict[option]
                 except Exception as e:   # pragma: no cover
@@ -411,11 +436,9 @@ class PluginHelper:
                 tool_d[c_name]['log_config'] = log_config
 
             # add label for priority
-            status = manifest.option(section, 'settings')
-            self.logger.info(status)
-            if status[0]:
+            if 'settings' in overall_dict:
                 try:
-                    options_dict = json.loads(status[1])
+                    options_dict = overall_dict['settings']
                     for option in options_dict:
                         if option == 'priority':
                             tool_d[c_name]['labels']['vent.priority'] = options_dict[option]
@@ -437,7 +460,8 @@ class PluginHelper:
                    groups=None,
                    enabled="yes",
                    branch="master",
-                   version="HEAD"):
+                   version="HEAD",
+                   config_val=None):
         """
         Start a set of tools that match the parameters given, if no parameters
         are given, start all installed tools on the master branch at verison
@@ -467,7 +491,8 @@ class PluginHelper:
                                                  groups,
                                                  enabled,
                                                  branch,
-                                                 version)
+                                                 version,
+                                                 config_val)
 
             # look out for links to delete because they're defined externally
             links_to_delete = set()

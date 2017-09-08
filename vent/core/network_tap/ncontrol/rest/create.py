@@ -2,8 +2,13 @@ import ast
 import docker
 import redis
 import socket
+import sys
 import web
 import uuid
+
+sys.path.append('/vent/plugins/vent')
+
+from vent.api.actions import Action
 
 
 class CreateR:
@@ -74,9 +79,9 @@ class CreateR:
 
         # spin up container with payload specifications
         if c:
-            # TODO read from template
-            tool_d = {"network_mode": "host",
-                      "volumes_from": [socket.gethostname()]}
+            action = Action()
+            tool_d = action.prep_start(config_val=payload['config_val'])
+            return 'tool_d: ' + str(tool_d)
 
             cmd = '/tmp/run.sh ' + payload['nic'] + ' ' + payload['interval']
             cmd += ' ' + payload['id'] + ' ' + payload['iters'] + ' '

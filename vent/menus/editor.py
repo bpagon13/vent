@@ -7,7 +7,9 @@ import re
 
 from vent.api.plugin_helpers import PluginHelper
 from vent.api.templates import Template
+from vent.helpers.meta import ParsedSections
 from vent.menus.del_instances import DeleteForm
+from vent.menus.ntap import CreateNTap
 
 
 class EditorForm(npyscreen.ActionForm):
@@ -42,6 +44,8 @@ class EditorForm(npyscreen.ActionForm):
                               self.settings['from_registry'])
         self.instance_cfg = ('new_instance' in self.settings and
                              self.settings['new_instance'])
+        self.ntap_cfg = ('ntap_cfg' in self.settings and
+                         self.settings['ntap_cfg'])
 
         # get manifest info for tool that will be used throughout
         if not self.just_downloaded and not self.vent_cfg:
@@ -77,6 +81,13 @@ class EditorForm(npyscreen.ActionForm):
             template.set_option('settings', 'instances',
                                 str(self.settings['new_instances']))
             template.write_config()
+            with open(template_path) as vent_template:
+                self.config_val = vent_template.read()
+        elif self.ntap_cfg:
+            self.settings['tool_name'] = 'new ntap container'
+            template_path = self.manifest.option(self.section, 'path')[1]
+            template_path = os.path.join(template_path, 'ncapture',
+                                         'vent.template')
             with open(template_path) as vent_template:
                 self.config_val = vent_template.read()
         else:
@@ -117,7 +128,13 @@ class EditorForm(npyscreen.ActionForm):
     def change_screens(self):
         """ Change to the next tool to edit or back to MAIN form """
         if self.settings['next_tool']:
-            self.parentApp.change_form(self.settings['next_tool'])
+            if self.ntap_cfg:
+                form_name = self.settings['next_tool']
+                self.parentApp.addForm(form_name, CreateNTap,
+                                       **self.settings['form_args'])
+                self.parentApp.change_form(form_name)
+            else:
+                self.parentApp.change_form(self.settings['next_tool'])
         else:
             self.parentApp.change_form("MAIN")
 
@@ -277,7 +294,7 @@ class EditorForm(npyscreen.ActionForm):
             save_args = {'main_cfg': True,
                          'config_val': self.edit_space.value}
             self.manifest = self.settings['save_configure'](**save_args)[1]
-        else:
+        elif not self.ntap_cfg:
             save_args = copy.deepcopy(self.tool_identifier)
             save_args.update({'config_val': self.edit_space.value})
             if self.registry_tool:
@@ -287,7 +304,8 @@ class EditorForm(npyscreen.ActionForm):
             self.manifest = self.settings['save_configure'](**save_args)[1]
 
         # restart tools, if necessary
-        if not self.just_downloaded and not self.instance_cfg:
+        if (not self.just_downloaded and not self.instance_cfg and
+                not self.ntap_cfg):
             restart_kargs = {'main_cfg': self.vent_cfg,
                              'old_val': self.config_val,
                              'new_val': self.edit_space.value}
@@ -323,7 +341,7 @@ class EditorForm(npyscreen.ActionForm):
                 self.settings['start_tools'](tool_d)
 
         # prompt user for instance changes, as necessary
-        if not self.instance_cfg and not self.vent_cfg:
+        if not self.instance_cfg and not self.vent_cfg and not self.ntap_cfg:
             if new_instances > old_instances:
                 try:
                     diff = str(new_instances - old_instances)
@@ -406,8 +424,13 @@ class EditorForm(npyscreen.ActionForm):
                                              " delete, exiting", title="Error")
                     self.on_cancel()
 
+        # save configuration information for ntap
+        if self.ntap_cfg:
+            parsed_val = ParsedSections(self.edit_space.value)
+            self.settings['form_args']['config_val'] = parsed_val
+
         if (new_instances == old_instances or
-                self.instance_cfg or self.vent_cfg):
+                self.instance_cfg or self.vent_cfg or self.ntap_cfg):
             npyscreen.notify_confirm("Done configuring " +
                                      self.settings['tool_name'],
                                      title="Configurations saved")
